@@ -1,63 +1,93 @@
 #!/bin/bash
 
-skipm="" #detectors to skip
-m="PIPE ITS TPC"  #detectors to simulate
-g="pythia8hi"       #generator for background
-gs="pythia8"      #generator for signal
+gb=pythia8hi #generator for background
+gs=pythia8 #generator for signal
+#m="PIPE TPC ITS" # modules to generate
+#me="ZDC" # modules to exclude
+#dry=true #only testing for debug
 
-for nb in {10,100}; do
- 
-  mkdir -p $nb
-  rm -rf $nb/*
-  cd $nb
+[ -n "$dry" ] && echo "dry test run. nothing is actually done"
+echo
 
-  mkdir -p background
-  rm -rf background/*
-  cd background
-
-  #time to create the background events
-  start=`date +%s`
-  #time o2-sim -n $nb -m $m -g $g | tee -a log.txt
-  time o2-sim -n $nb -g $g | tee -a log.txt
-  end=`date +%s`
-  timebg=`expr $end - $start`
-  echo wall time for background event generation "$timebg" | tee -a log.txt
-
-  cd ..
-
-  for ns in {10,100,1000,10000}; do
-
-    mkdir -p signal$ns
-    rm -rf signal$ns/*
-    cd signal$ns
-
-    #time to create the signal events
+for nb in {1,10}; do	
+    
+    #
+    # generate background events
+    #
+    echo starting background_$nb `date` | tee -a perftest.log.txt
+    mkdir background_$nb
+    cd    background_$nb
+    cmd="{ time o2-sim -n$nb -g $gb "
+    if [ -n "$m" ]
+    then 
+        cmd="$cmd -m $m "
+    fi
+    if [ -n "$me" ]
+    then 
+        cmd="$cmd --skipModules $me "
+    fi
+    cmd="$cmd ; } &> log.txt"
+    echo "$cmd" | tee -a ./../perftest.log.txt
     start=`date +%s`
-    #time o2-sim -n $ns -m $m -g $gs --embedIntoFile ./../background/o2sim.root | tee -a log.txt
-    time o2-sim -n $ns -g $gs --embedIntoFile ./../background/o2sim.root | tee -a log.txt
+    [ -z "$dry" ] && eval $cmd
     end=`date +%s`
-    times=`expr $end - $start`
-    echo wall time for signal event generation "$times" | tee -a log.txt
-
-    #time for digitization
-    start=`date +%s`
-    time o2-sim-digitizer-workflow -b --simFile ./../background/o2sim.root --simFileS o2sim.root -n $ns | tee -a log.txt
-    end=`date +%s`
-    timed=`expr $end - $start`
-    echo wall time for digitization "$timed" | tee -a log.txt
-
     cd ..
+    timebg=`expr $end - $start`
+    echo finished background_$nb `date` | tee -a perftest.log.txt
+    echo walltime background_$nb "$timebg" | tee -a perftest.log.txt
+    echo | tee -a perftest.log.txt
 
-    echo number of background events "$nb" | tee -a ../log.txt
-    echo number of signal event "$ns" | tee -a ../log.txt
-    echo wall time for background event generation "$timebg" | tee -a ../log.txt
-    echo wall time for signal event generation "$times" | tee -a log.txt ../log.txt
-    echo wall time for digitization "$timed" | tee -a ../log.txt
-    echo | tee -a ../log.txt
- 
-  done
-  cd ..
+    for ns in {1,10,100,1000}; do
+
+        #
+	# generate signal events 
+	#
+        echo starting background_${nb}_signal_${ns} `date` | tee -a perftest.log.txt
+        mkdir background_${nb}_signal_$ns
+        cd background_${nb}_signal_$ns
+        cmd="{ time o2-sim -n$ns -g $gs "
+        if [ -n "$m" ]
+        then
+            cmd="$cmd -m $m "
+        fi
+        if [ -n "$me" ]
+        then
+            cmd="$cmd --skipModules $me "
+        fi
+        cmd="$cmd  --embedIntoFile ./../background_$nb/sim.root ; } &> log.txt"
+        echo "$cmd" | tee -a ./../perftest.log.txt
+        start=`date +%s`
+        [ -z "$dry" ] && eval $cmd
+        end=`date +%s`
+        cd ..
+        timebg=`expr $end - $start`
+        echo finished background_${nb}_signal_${ns} `date` | tee -a perftest.log.txt
+        echo walltime background_${nb}_signal_${ns} "$timebg" | tee -a perftest.log.txt
+        echo | tee -a perftest.log.txt
+
+	#
+	# digitize signal+background events
+	#
+        echo starting digitization background_${nb}_signal_${ns} `date` | tee -a perftest.log.txt
+        #mkdir background_${nb}_singal_$ns
+        cd background_${nb}_signal_$ns
+        cmd="{ time o2-sim-digitizer-workflow -n$ns --simFile ./../background_$nb/o2sim.root --simFileS o2sim.root ; } &> log.digit.txt"
+        echo "$cmd" | tee -a ./../perftest.log.txt
+        start=`date +%s`
+        [ -z "$dry" ] && eval $cmd
+        end=`date +%s`
+        cd ..
+        timebg=`expr $end - $start`
+        echo finished digitization background_${nb}_signal_${ns} `date` | tee -a perftest.log.txt
+        echo walltime digitization background_${nb}_signal_${ns} "$timebg" | tee -a perftest.log.txt
+        echo | tee -a perftest.log.txt
+
+    done 
+
 done
 
+echo
+echo "everything finished." | tee -a perftest.log.txt
 
+exit
 
