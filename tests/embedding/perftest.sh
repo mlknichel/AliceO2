@@ -2,14 +2,17 @@
 
 gb=pythia8hi #generator for background
 gs=pythia8 #generator for signal
-#m="PIPE TPC ITS" # modules to generate
-#me="ZDC" # modules to exclude
+#m="PIPE TPC ITS" # modules to simulate
+me="EMC ZDC MFT MID MCH" # modules to exclude from simulation
 #dry=true #only testing for debug
+
+d=`echo "$m" | sed s-\ -,-g` # detectors to simulate (comma sperated list)
+de=`echo "$me" | sed s-\ -,-g` # detectors to skip from simulation (comma separated list)
 
 [ -n "$dry" ] && echo "dry test run. nothing is actually done"
 echo
 
-for nb in {1,10}; do	
+for nb in {1,10,100}; do	
     
     #
     # generate background events
@@ -37,7 +40,7 @@ for nb in {1,10}; do
     echo walltime background_$nb "$timebg" | tee -a perftest.log.txt
     echo | tee -a perftest.log.txt
 
-    for ns in {1,10,100,1000}; do
+    for ns in {1,10,100,1000,10000}; do
 
         #
 	# generate signal events 
@@ -71,7 +74,16 @@ for nb in {1,10}; do
         echo starting digitization background_${nb}_signal_${ns} `date` | tee -a perftest.log.txt
         #mkdir background_${nb}_singal_$ns
         cd background_${nb}_signal_$ns
-        cmd="{ time o2-sim-digitizer-workflow -n$ns --simFile ./../background_$nb/o2sim.root --simFileS o2sim.root ; } &> log.digit.txt"
+        cmd="{ time o2-sim-digitizer-workflow -n$ns --simFile ./../background_$nb/o2sim.root --simFileS o2sim.root "
+        if [ -n "$d" ]
+        then
+            cmd="$cmd --onlyDet $d"
+        fi
+        if [ -n "$de" ]
+      	then
+	    cmd="$cmd --skipDet $de "
+	fi
+        cmd="$cmd ; } &> log.digit.txt"
         echo "$cmd" | tee -a ./../perftest.log.txt
         start=`date +%s`
         [ -z "$dry" ] && eval $cmd
